@@ -1,0 +1,41 @@
+# Default configuration for pixelsort application
+
+# Application settings
+app:
+  name: "pixelsort"
+  version: "2.0.0"
+  output_dir: "output"
+  temp_dir: "temp"
+
+# Image processing defaults
+image:
+  default_format: "PNG"
+  quality: 95
+  max_size: 4096  # Maximum dimension in pixels
+  
+# Sorting parameters defaults
+sorting:
+  default_function: "lightness"
+  default_interval: "random"
+  randomness: 10  # Percentage of intervals not to sort
+  characteristic_length: 50
+  
+# Threshold defaults
+thresholds:
+  bottom: 0.25
+  upper: 0.8
+
+# Network settings
+network:
+  timeout: 30
+  user_agent: "pixelsort/2.0.0"
+  
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
+  
+# Performance settings  
+performance:
+  max_threads: 4
+  chunk_size: 1000
