@@ -533,6 +533,11 @@ class GradioInterface:
         
         config = preset.sorting_config
         
+        # Get CA rule from advanced config if available, otherwise use default
+        ca_rule_value = -1
+        if preset.advanced_config and hasattr(preset.advanced_config, 'ca_rule') and preset.advanced_config.ca_rule is not None:
+            ca_rule_value = preset.advanced_config.ca_rule
+        
         # Return values for all the GUI controls
         return (
             config.interval_function,           # interval_dropdown
@@ -542,7 +547,7 @@ class GradioInterface:
             config.bottom_threshold,            # bottom_threshold_slider
             config.upper_threshold,             # upper_threshold_slider
             config.clength,                     # characteristic_length_slider
-            config.ca_rule_number if config.ca_rule_number is not None else -1,  # ca_rule_slider
+            ca_rule_value,                      # ca_rule_slider
             f"✅ Loaded preset: {preset.name} - {preset.description}"  # status message
         )
 
@@ -569,6 +574,14 @@ class GradioInterface:
             return gr.update(), f"❌ Preset '{preset_name}' already exists"
         
         try:
+            # Create custom preset with proper AdvancedConfig
+            from ..config.settings import AdvancedConfig
+            
+            # Create advanced config if CA rule is specified
+            advanced_config = None
+            if ca_rule_number != -1:
+                advanced_config = AdvancedConfig(ca_rule=ca_rule_number)
+            
             # Create custom preset
             custom_preset = create_custom_preset(
                 name=preset_name,
@@ -579,9 +592,12 @@ class GradioInterface:
                 randomness=randomness,
                 angle=angle,
                 interval_function=interval_function,
-                sorting_function=sorting_function,
-                ca_rule_number=ca_rule_number if ca_rule_number != -1 else None
+                sorting_function=sorting_function
             )
+            
+            # Add advanced config if needed
+            if advanced_config:
+                custom_preset.advanced_config = advanced_config
             
             # Register the preset
             register_preset(custom_preset)
