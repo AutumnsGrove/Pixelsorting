@@ -142,6 +142,11 @@ class ImageProcessor:
             # Step 1: Validate configuration
             progress_manager.start_step("validation", "Validating configuration...")
 
+            # Save (potentially scaled) image temporarily for processing
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+                image.save(tmp_file.name)
+                tmp_path = tmp_file.name
+
             config = SortingConfig(
                 bottom_threshold=bottom_threshold,
                 upper_threshold=upper_threshold,
@@ -151,7 +156,7 @@ class ImageProcessor:
                 ca_rule_number=ca_rule_number if ca_rule_number != -1 else None,
                 interval_function=interval_function,
                 sorting_function=sorting_function,
-                url="",  # Using uploaded image
+                url=tmp_path,  # Use temporary file path
                 internet=False,
             )
 
@@ -161,24 +166,19 @@ class ImageProcessor:
             # Step 2: Prepare image and initialize processor  
             progress_manager.start_step("preparation", "Preparing image...")
 
-            # Scale the image if requested
+            # Scale the image if requested (already saved to tmp_path above)
             if scale_percent < 100:
                 image = self.scale_image(image, scale_percent)
                 print(f"Scaled image to {scale_percent}% ({image.size[0]}×{image.size[1]})")
-
-            # Save (potentially scaled) image temporarily for processing
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
-                image.save(tmp_file.name)
-                tmp_path = tmp_file.name
+                # Re-save the scaled image to the same temporary file
+                image.save(tmp_path)
 
             # Get config dict and remove duplicated parameters
             config_dict = config.to_dict()
             config_dict.pop("int_function", None)  # Remove interval_function from dict
             config_dict.pop("sorting_function", None)  # Remove sorting_function from dict
             
-            # Update config with the actual file path for interval functions that need to reload the image
-            config_dict['url'] = tmp_path
-            config_dict['internet'] = False
+            # Config already has the correct tmp_path URL, no need to update
 
             # Initialize processor with correct file path
             self.current_processor = PixelSorter(
