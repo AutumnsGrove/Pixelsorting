@@ -14,6 +14,7 @@ from PIL import Image
 from ..core.processor import PixelSorter
 from ..effects.sorting_functions import list_sorting_functions
 from ..effects.interval_functions import list_interval_functions
+from ..effects.special_effects import generate_elementary_cellular_automata
 from ..utils.config import SortingConfig, validate_config
 from .progress_manager import ProgressManager
 
@@ -46,6 +47,34 @@ class GradioInterface:
         
         return example_files[:3]  # Limit to 3 examples for interface
     
+    def preview_cellular_automata(self, ca_rule_number: int) -> Image.Image:
+        """
+        Generate a preview of the cellular automata pattern.
+        
+        Args:
+            ca_rule_number: CA rule number (-1 for random, 0-255 for specific)
+            
+        Returns:
+            PIL Image showing the CA pattern
+        """
+        try:
+            # Use a fixed preview size for fast generation
+            preview_width = 400
+            preview_height = 300
+            
+            rule_number = ca_rule_number if ca_rule_number != -1 else None
+            ca_image = generate_elementary_cellular_automata(
+                preview_width, preview_height, rule_number
+            )
+            
+            return ca_image
+            
+        except Exception as e:
+            print(f"Error generating CA preview: {e}")
+            # Return a simple placeholder image on error
+            placeholder = Image.new("RGB", (400, 300), color=(128, 128, 128))
+            return placeholder
+    
     def process_image_gradio(
         self,
         image: Image.Image,
@@ -56,6 +85,7 @@ class GradioInterface:
         bottom_threshold: float,
         upper_threshold: float,
         characteristic_length: int,
+        ca_rule_number: int,
         progress: gr.Progress = gr.Progress()
     ) -> Tuple[Image.Image, str]:
         """
@@ -96,6 +126,7 @@ class GradioInterface:
                 clength=characteristic_length,
                 randomness=randomness,
                 angle=angle,
+                ca_rule_number=ca_rule_number if ca_rule_number != -1 else None,
                 interval_function=interval_function,
                 sorting_function=sorting_function,
                 url="",  # Using uploaded image
@@ -108,10 +139,15 @@ class GradioInterface:
             # Step 2: Initialize processor
             progress_manager.start_step("initialization", "Initializing processor...")
             
+            # Get config dict and remove duplicated parameters
+            config_dict = config.to_dict()
+            config_dict.pop('int_function', None)  # Remove interval_function from dict
+            config_dict.pop('sorting_function', None)  # Remove sorting_function from dict
+            
             self.current_processor = PixelSorter(
                 interval_function=interval_function,
                 sorting_function=sorting_function,
-                **config.to_dict()
+                **config_dict
             )
             progress_manager.complete_step("initialization", "Processor initialized")
             
@@ -184,7 +220,7 @@ class GradioInterface:
         
         with gr.Blocks(
             title="Pixel Sorter",
-            theme=gr.themes.glass(),
+            theme=gr.themes.Glass(),
             css=".gradio-container {max-width: 1200px; margin: auto;}"
         ) as interface:
             
@@ -288,6 +324,46 @@ class GradioInterface:
                     info="Base length for random and wave intervals"
                 )
                 
+                gr.Markdown("### Cellular Automata Parameters")
+                gr.Markdown("These parameters are used when 'file' or 'file-edges' interval functions are selected.")
+                
+                with gr.Row():
+                    ca_rule_slider = gr.Slider(
+                        minimum=-1,
+                        maximum=255,
+                        value=-1,
+                        step=1,
+                        label="CA Rule Number",
+                        info="Cellular automata rule (0-255). Use -1 for random selection from recommended rules.",
+                        scale=3
+                    )
+                    ca_preview_button = gr.Button(
+                        "🔍 Preview CA",
+                        size="sm",
+                        scale=1
+                    )
+                
+                ca_preview_image = gr.Image(
+                    label="Cellular Automata Preview",
+                    type="pil",
+                    height=200,
+                    visible=True,
+                    interactive=False
+                )
+                
+                with gr.Accordion("Recommended CA Rules", open=False):
+                    gr.Markdown("""
+                    **Recommended elementary cellular automata rules for interesting patterns:**
+                    - **Rule 26, 19, 23, 25**: Simple patterns with structure
+                    - **Rule 35, 106, 11**: More complex organized patterns  
+                    - **Rule 110**: Turing complete, creates complex structures
+                    - **Rule 45, 41, 105**: Irregular but structured patterns
+                    - **Rule 54, 3, 15, 9**: Various geometric patterns
+                    - **Rule 154, 142**: Dense, fractal-like patterns
+                    
+                    Set to -1 to randomly select from these recommended rules, or choose a specific number 0-255.
+                    """)
+                
                 # Function descriptions
                 gr.Markdown("### Function Descriptions")
                 
@@ -298,6 +374,11 @@ class GradioInterface:
                     - **edges**: Uses edge detection to determine intervals
                     - **waves**: Creates wave-like intervals with slight randomization
                     - **none**: No intervals (sorts entire rows)
+                    - **file**: Uses cellular automata patterns as interval masks
+                    - **file-edges**: Uses edge detection on cellular automata patterns
+                    - **snap**: Thanos snap effect (removes ~50% of pixels randomly)
+                    - **shuffle-total**: Shuffles pixels within each row
+                    - **shuffle-axis**: Shuffles the order of rows vertically
                     """)
                 
                 with gr.Accordion("Sorting Functions", open=False):
@@ -317,6 +398,14 @@ class GradioInterface:
                 size="lg"
             )
             
+            # Set up the CA preview function
+            ca_preview_button.click(
+                fn=self.preview_cellular_automata,
+                inputs=[ca_rule_slider],
+                outputs=[ca_preview_image],
+                show_progress=False
+            )
+            
             # Set up the processing function
             process_button.click(
                 fn=self.process_image_gradio,
@@ -328,7 +417,8 @@ class GradioInterface:
                     randomness_slider,
                     bottom_threshold_slider,
                     upper_threshold_slider,
-                    characteristic_length_slider
+                    characteristic_length_slider,
+                    ca_rule_slider
                 ],
                 outputs=[output_image, status_text],
                 show_progress=True
@@ -338,7 +428,8 @@ class GradioInterface:
             gr.Markdown(
                 "---\n"
                 "💡 **Tips:** Start with the basic options, then experiment with advanced parameters. "
-                "Different combinations of interval and sorting functions create unique effects!"
+                "Different combinations of interval and sorting functions create unique effects! "
+                "When using 'file' or 'file-edges' functions, use the Preview CA button to see the cellular automata pattern first."
             )
         
         return interface

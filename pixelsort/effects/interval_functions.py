@@ -224,15 +224,16 @@ def file_mask_intervals(pixels: PixelArray, args: dict) -> IntervalArray:
     
     Args:
         pixels: 3D array of pixel values
-        args: Dictionary containing parameters
+        args: Dictionary containing parameters including 'ca_rule_number'
         
     Returns:
         2D array of interval boundaries
     """
     # Generate cellular automata image
+    rule_number = args.get('ca_rule_number', None)
     ca_img = generate_elementary_cellular_automata(
-        len(pixels[0]), len(pixels)
-    ).resize((len(pixels[0]), len(pixels)), Image.ANTIALIAS)
+        len(pixels[0]), len(pixels), rule_number
+    ).resize((len(pixels[0]), len(pixels)), Image.LANCZOS)
     
     data = ca_img.load()
     file_pixels = image_to_pixel_array(len(pixels[0]), len(pixels), data, "Defining edges...")
@@ -262,17 +263,18 @@ def file_edges_intervals(pixels: PixelArray, args: dict) -> IntervalArray:
     
     Args:
         pixels: 3D array of pixel values
-        args: Dictionary containing image parameters
+        args: Dictionary containing image parameters including 'ca_rule_number'
         
     Returns:
         2D array of interval boundaries
     """
     # Generate cellular automata image and apply edge detection
-    ca_img = generate_elementary_cellular_automata(len(pixels[0]), len(pixels))
+    rule_number = args.get('ca_rule_number', None)
+    ca_img = generate_elementary_cellular_automata(len(pixels[0]), len(pixels), rule_number)
     
     edge_img = (ca_img
                 .rotate(args.get("angle", 0), expand=True)
-                .resize((len(pixels[0]), len(pixels)), Image.ANTIALIAS)
+                .resize((len(pixels[0]), len(pixels)), Image.LANCZOS)
                 .filter(ImageFilter.FIND_EDGES)
                 .convert("RGBA"))
     

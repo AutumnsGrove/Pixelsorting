@@ -24,6 +24,9 @@ class SortingConfig:
     # Image parameters
     angle: float = 0.0  # Rotation angle in degrees
     
+    # Cellular automata parameters
+    ca_rule_number: int = None  # Rule number for cellular automata (0-255)
+    
     # Function names
     interval_function: str = "random"
     sorting_function: str = "lightness"
@@ -51,6 +54,7 @@ class SortingConfig:
             "clength": self.clength,
             "randomness": self.randomness,
             "angle": self.angle,
+            "ca_rule_number": self.ca_rule_number,
             "int_function": self.interval_function,
             "sorting_function": self.sorting_function,
             "url": self.url,
@@ -105,5 +109,8 @@ def validate_config(config: SortingConfig) -> bool:
     
     if not (0.0 <= config.angle < 360.0):
         raise ValueError("angle must be between 0.0 and 360.0")
+    
+    if config.ca_rule_number is not None and not (0 <= config.ca_rule_number <= 255):
+        raise ValueError("ca_rule_number must be between 0 and 255")
     
     return True

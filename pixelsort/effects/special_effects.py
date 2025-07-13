@@ -107,7 +107,7 @@ def generate_elementary_cellular_automata(width: int, height: int,
     
     # Resize to requested dimensions if different from scaled dimensions
     if (scaled_width, scaled_height) != (width, height):
-        new_img = new_img.resize((width, height), Image.ANTIALIAS)
+        new_img = new_img.resize((width, height), Image.LANCZOS)
     
     return new_img
 
