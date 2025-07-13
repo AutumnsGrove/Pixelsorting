@@ -166,8 +166,29 @@ class PixelSorter:
         # Rotate back to original orientation if needed
         angle = self.args.get("angle", 0)
         if angle != 0:
+            # Store the target size (should match original image dimensions)
+            target_size = self.original_image.size if self.original_image else self.output_image.size
+            
+            # Rotate back (reverse the rotation)
             self.output_image = self.output_image.rotate(360 - angle, expand=True)
-            # Crop to appropriate size (would need to implement crop_to function)
+            
+            # Crop to target size to remove extra space from rotation
+            if self.output_image.size != target_size:
+                # Calculate center crop coordinates
+                img_width, img_height = self.output_image.size
+                target_width, target_height = target_size
+                
+                # Only crop if the rotated image is larger than target
+                if img_width >= target_width and img_height >= target_height:
+                    left = (img_width - target_width) // 2
+                    top = (img_height - target_height) // 2
+                    right = left + target_width
+                    bottom = top + target_height
+                    
+                    self.output_image = self.output_image.crop((left, top, right, bottom))
+                else:
+                    # If rotated image is smaller, resize to target
+                    self.output_image = self.output_image.resize(target_size, Image.LANCZOS)
         
         return self.output_image
     

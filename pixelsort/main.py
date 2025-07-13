@@ -18,7 +18,7 @@ def main():
     """
     Main function to launch the pixel sorting web interface.
     """
-    print("🎨 Starting Pixel Sorter Web Interface...")
+    print("Starting Pixel Sorter Web Interface...")
     print("📂 Loading components...")
     
     try:

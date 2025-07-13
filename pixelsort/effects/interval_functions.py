@@ -272,11 +272,23 @@ def file_edges_intervals(pixels: PixelArray, args: dict) -> IntervalArray:
     rule_number = args.get('ca_rule_number', None)
     ca_img = generate_elementary_cellular_automata(len(pixels[0]), len(pixels), rule_number)
     
-    edge_img = (ca_img
-                .rotate(args.get("angle", 0), expand=True)
-                .resize((len(pixels[0]), len(pixels)), Image.LANCZOS)
-                .filter(ImageFilter.FIND_EDGES)
-                .convert("RGBA"))
+    # Apply rotation and edge detection without changing dimensions
+    angle = args.get("angle", 0)
+    if angle != 0:
+        # Rotate without expanding, then apply edge detection
+        edge_img = (ca_img
+                    .rotate(angle, expand=False)
+                    .filter(ImageFilter.FIND_EDGES)
+                    .convert("RGBA"))
+    else:
+        # No rotation needed
+        edge_img = (ca_img
+                    .filter(ImageFilter.FIND_EDGES)
+                    .convert("RGBA"))
+    
+    # Ensure the final image matches the expected dimensions
+    if edge_img.size != (len(pixels[0]), len(pixels)):
+        edge_img = edge_img.resize((len(pixels[0]), len(pixels)), Image.LANCZOS)
     
     edge_data = edge_img.load()
     filter_pixels = image_to_pixel_array(
