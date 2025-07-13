@@ -18,6 +18,11 @@ from ..effects.interval_functions import list_interval_functions
 from ..effects.special_effects import generate_elementary_cellular_automata
 from ..utils.config import SortingConfig, validate_config
 from .progress_manager import ProgressManager
+from ..config.presets import (
+    list_presets, get_preset, get_preset_descriptions, 
+    create_custom_preset, register_preset
+)
+from ..effects.sorting_functions import get_sorting_function
 
 
 class GradioInterface:
@@ -29,6 +34,7 @@ class GradioInterface:
         """Initialize the Gradio interface."""
         self.current_processor: Optional[PixelSorter] = None
         self.example_images = self._get_example_images()
+        self.custom_presets_file = os.path.join(os.path.expanduser("~"), ".pixelsort_custom_presets.json")
 
     def _get_example_images(self) -> List[str]:
         """
@@ -472,6 +478,369 @@ class GradioInterface:
             # Return original image with error message
             return image, error_msg
 
+    def load_custom_presets(self):
+        """Load custom presets from file."""
+        import json
+        try:
+            if os.path.exists(self.custom_presets_file):
+                with open(self.custom_presets_file, 'r') as f:
+                    custom_presets_data = json.load(f)
+                    for preset_data in custom_presets_data:
+                        from ..config.presets import Preset
+                        preset = Preset.from_dict(preset_data)
+                        register_preset(preset)
+        except Exception as e:
+            print(f"Error loading custom presets: {e}")
+
+    def save_custom_presets(self):
+        """Save custom presets to file."""
+        import json
+        try:
+            # Get all presets and filter for custom ones (not built-in)
+            all_preset_names = list_presets()
+            built_in_presets = {'main', 'file', 'random', 'kims', 'gentle', 'intense', 'waves', 'edges'}
+            
+            custom_preset_data = []
+            for preset_name in all_preset_names:
+                if preset_name not in built_in_presets:
+                    preset = get_preset(preset_name)
+                    if preset:
+                        custom_preset_data.append(preset.to_dict())
+            
+            with open(self.custom_presets_file, 'w') as f:
+                json.dump(custom_preset_data, f, indent=2)
+        except Exception as e:
+            print(f"Error saving custom presets: {e}")
+
+    def load_preset_values(self, preset_name: str):
+        """
+        Load preset values and return them for updating GUI controls.
+        
+        Args:
+            preset_name: Name of preset to load
+            
+        Returns:
+            Tuple of values for GUI controls
+        """
+        if not preset_name or preset_name == "Select a preset...":
+            return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), 
+                   gr.update(), gr.update(), gr.update(), "")
+        
+        preset = get_preset(preset_name)
+        if not preset:
+            return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), 
+                   gr.update(), gr.update(), gr.update(), f"❌ Preset '{preset_name}' not found")
+        
+        config = preset.sorting_config
+        
+        # Return values for all the GUI controls
+        return (
+            config.interval_function,           # interval_dropdown
+            config.sorting_function,            # sorting_dropdown
+            config.randomness,                  # randomness_slider
+            config.angle,                       # angle_slider
+            config.bottom_threshold,            # bottom_threshold_slider
+            config.upper_threshold,             # upper_threshold_slider
+            config.clength,                     # characteristic_length_slider
+            config.ca_rule_number if config.ca_rule_number is not None else -1,  # ca_rule_slider
+            f"✅ Loaded preset: {preset.name} - {preset.description}"  # status message
+        )
+
+    def save_current_as_preset(self, preset_name: str, interval_function: str, sorting_function: str, 
+                             randomness: float, angle: float, bottom_threshold: float, 
+                             upper_threshold: float, characteristic_length: int, ca_rule_number: int):
+        """
+        Save current settings as a new preset.
+        
+        Args:
+            preset_name: Name for the new preset
+            Other args: Current values from GUI controls
+            
+        Returns:
+            Tuple of (updated preset choices, status message)
+        """
+        if not preset_name or preset_name.strip() == "":
+            return gr.update(), "❌ Please enter a preset name"
+        
+        preset_name = preset_name.strip()
+        
+        # Check if preset already exists
+        if get_preset(preset_name):
+            return gr.update(), f"❌ Preset '{preset_name}' already exists"
+        
+        try:
+            # Create custom preset
+            custom_preset = create_custom_preset(
+                name=preset_name,
+                description=f"Custom preset: {preset_name}",
+                bottom_threshold=bottom_threshold,
+                upper_threshold=upper_threshold,
+                clength=characteristic_length,
+                randomness=randomness,
+                angle=angle,
+                interval_function=interval_function,
+                sorting_function=sorting_function,
+                ca_rule_number=ca_rule_number if ca_rule_number != -1 else None
+            )
+            
+            # Register the preset
+            register_preset(custom_preset)
+            
+            # Save to file
+            self.save_custom_presets()
+            
+            # Update dropdown choices
+            preset_choices = ["Select a preset..."] + list_presets()
+            
+            return gr.update(choices=preset_choices), f"✅ Saved preset: {preset_name}"
+            
+        except Exception as e:
+            return gr.update(), f"❌ Error saving preset: {str(e)}"
+
+    def create_sorting_function_visualization(self, sorting_function: str) -> Image.Image:
+        """
+        Create a visual representation of how a sorting function orders pixels.
+        
+        Args:
+            sorting_function: Name of the sorting function
+            
+        Returns:
+            PIL Image showing before/after comparison of sorted pixels
+        """
+        try:
+            # Create a sample of diverse colors to show how they get sorted
+            width = 400
+            height = 100
+            strip_height = 30
+            
+            # Generate sample pixels with diverse properties
+            sample_pixels = []
+            num_samples = 40
+            
+            # Create a variety of interesting colors
+            import colorsys
+            for i in range(num_samples):
+                if i < 8:
+                    # Pure colors across hue spectrum
+                    hue = i / 8.0
+                    r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+                    pixel = (int(r * 255), int(g * 255), int(b * 255), 255)
+                elif i < 16:
+                    # Grayscale gradient
+                    gray = int((i - 8) * 255 / 7)
+                    pixel = (gray, gray, gray, 255)
+                elif i < 24:
+                    # Saturated to desaturated reds
+                    sat = 1.0 - (i - 16) / 8.0
+                    r, g, b = colorsys.hsv_to_rgb(0.0, sat, 1.0)
+                    pixel = (int(r * 255), int(g * 255), int(b * 255), 255)
+                elif i < 32:
+                    # Dark to light blues
+                    value = (i - 24) / 8.0
+                    r, g, b = colorsys.hsv_to_rgb(0.6, 1.0, value)
+                    pixel = (int(r * 255), int(g * 255), int(b * 255), 255)
+                else:
+                    # Random mix
+                    import random
+                    pixel = (
+                        random.randint(0, 255),
+                        random.randint(0, 255), 
+                        random.randint(0, 255),
+                        255
+                    )
+                sample_pixels.append(pixel)
+            
+            # Get the sorting function
+            sort_func = get_sorting_function(sorting_function)
+            
+            # Create the visualization image
+            img = Image.new("RGB", (width, height), color=(250, 250, 250))
+            
+            # Calculate pixel width
+            pixel_width = width // len(sample_pixels)
+            
+            # Draw original (unsorted) pixels in top strip
+            for i, pixel in enumerate(sample_pixels):
+                x_start = i * pixel_width
+                x_end = min((i + 1) * pixel_width, width)
+                
+                # Draw pixel color
+                for x in range(x_start, x_end):
+                    for y in range(5, 5 + strip_height):
+                        img.putpixel((x, y), pixel[:3])
+            
+            # Sort the pixels using the selected function
+            sorted_pixels = sorted(sample_pixels, key=sort_func)
+            
+            # Draw sorted pixels in bottom strip
+            for i, pixel in enumerate(sorted_pixels):
+                x_start = i * pixel_width
+                x_end = min((i + 1) * pixel_width, width)
+                
+                # Draw pixel color
+                for x in range(x_start, x_end):
+                    for y in range(height - strip_height - 5, height - 5):
+                        img.putpixel((x, y), pixel[:3])
+            
+            # Add labels and border
+            draw = ImageDraw.Draw(img)
+            
+            # Draw borders around strips
+            draw.rectangle([0, 4, width-1, 5 + strip_height], outline=(100, 100, 100), width=1)
+            draw.rectangle([0, height - strip_height - 6, width-1, height - 4], outline=(100, 100, 100), width=1)
+            
+            # Add text labels
+            draw.text((5, 1), "Original", fill=(50, 50, 50))
+            draw.text((5, height - strip_height - 20), f"Sorted by: {sorting_function}", fill=(50, 50, 50))
+            
+            # Add explanation of what this function does
+            function_explanations = {
+                "lightness": "Dark → Light (HSV Value)",
+                "intensity": "Low → High (Sum of RGB)",
+                "hue": "Red → Yellow → Green → Blue → Purple",
+                "saturation": "Dull/Gray → Vivid/Colorful",
+                "red": "Low Red → High Red",
+                "green": "Low Green → High Green", 
+                "blue": "Low Blue → High Blue",
+                "minimum": "Dark shadows → Bright highlights",
+                "maximum": "Muted → Intense colors"
+            }
+            
+            explanation = function_explanations.get(sorting_function, "Custom sorting")
+            text_bbox = draw.textbbox((0, 0), explanation)
+            text_width = text_bbox[2] - text_bbox[0]
+            draw.text((width - text_width - 5, height - 15), explanation, fill=(80, 80, 80))
+            
+            return img
+            
+        except Exception as e:
+            print(f"Error creating sorting function visualization: {e}")
+            # Return a simple placeholder
+            placeholder = Image.new("RGB", (400, 100), color=(200, 200, 200))
+            draw = ImageDraw.Draw(placeholder)
+            draw.text((10, 40), f"Preview not available for: {sorting_function}", fill=(100, 100, 100))
+            return placeholder
+
+    def create_threshold_overlay(self, image: Image.Image, bottom_threshold: float, upper_threshold: float, overlay_enabled: bool = True) -> Image.Image:
+        """
+        Create a live overlay showing which pixels would be affected by threshold settings.
+        
+        Args:
+            image: Input PIL Image
+            bottom_threshold: Lower threshold value (0.0-1.0)
+            upper_threshold: Upper threshold value (0.0-1.0)
+            overlay_enabled: Whether to show the overlay
+            
+        Returns:
+            PIL Image with threshold overlay (like focus peaking on cameras)
+        """
+        if image is None:
+            # Return a placeholder when no image is uploaded
+            placeholder = Image.new("RGB", (400, 300), color=(240, 240, 240))
+            draw = ImageDraw.Draw(placeholder)
+            draw.text((120, 140), "Upload an image to see threshold preview", fill=(100, 100, 100))
+            return placeholder
+        
+        if not overlay_enabled:
+            return image
+        
+        try:
+            # Convert image to RGB if needed
+            if image.mode != "RGB":
+                display_image = image.convert("RGB")
+            else:
+                display_image = image.copy()
+            
+            # Resize if image is too large for preview (for performance)
+            max_preview_size = 800
+            if max(display_image.size) > max_preview_size:
+                aspect_ratio = display_image.size[0] / display_image.size[1]
+                if display_image.size[0] > display_image.size[1]:
+                    new_size = (max_preview_size, int(max_preview_size / aspect_ratio))
+                else:
+                    new_size = (int(max_preview_size * aspect_ratio), max_preview_size)
+                display_image = display_image.resize(new_size, Image.LANCZOS)
+            
+            # Convert to array for faster processing
+            import numpy as np
+            img_array = np.array(display_image)
+            
+            # Calculate lightness for each pixel (same method as in pixel sorting)
+            # Using RGB to HSV conversion for lightness calculation
+            def rgb_to_lightness(r, g, b):
+                """Convert RGB to lightness (HSV Value)"""
+                r, g, b = r / 255.0, g / 255.0, b / 255.0
+                return max(r, g, b)  # HSV Value component
+            
+            # Create lightness map
+            height, width = img_array.shape[:2]
+            lightness_map = np.zeros((height, width))
+            
+            for y in range(height):
+                for x in range(width):
+                    r, g, b = img_array[y, x]
+                    lightness_map[y, x] = rgb_to_lightness(r, g, b)
+            
+            # Create overlay mask for pixels that would be sorted
+            overlay_array = img_array.copy().astype(np.float32)
+            
+            # Pixels below bottom threshold (will be sorted) - red overlay
+            below_mask = lightness_map < bottom_threshold
+            if np.any(below_mask):
+                overlay_array[below_mask, 0] = np.minimum(255, overlay_array[below_mask, 0] + 100)  # More red
+                overlay_array[below_mask, 1] = np.maximum(0, overlay_array[below_mask, 1] - 30)     # Less green
+                overlay_array[below_mask, 2] = np.maximum(0, overlay_array[below_mask, 2] - 30)     # Less blue
+            
+            # Pixels above upper threshold (will be sorted) - blue overlay  
+            above_mask = lightness_map > upper_threshold
+            if np.any(above_mask):
+                overlay_array[above_mask, 0] = np.maximum(0, overlay_array[above_mask, 0] - 30)     # Less red
+                overlay_array[above_mask, 1] = np.maximum(0, overlay_array[above_mask, 1] - 30)     # Less green
+                overlay_array[above_mask, 2] = np.minimum(255, overlay_array[above_mask, 2] + 100)  # More blue
+            
+            # Create zebra-like striping for better visibility (like DSLR focus peaking)
+            stripe_mask = (np.arange(height)[:, None] + np.arange(width)[None, :]) % 4 < 2
+            
+            # Apply stronger overlay on stripe areas
+            strong_below = below_mask & stripe_mask
+            strong_above = above_mask & stripe_mask
+            
+            if np.any(strong_below):
+                overlay_array[strong_below, 0] = np.minimum(255, overlay_array[strong_below, 0] + 50)
+                overlay_array[strong_below, 1] = np.maximum(0, overlay_array[strong_below, 1] - 50)
+                overlay_array[strong_below, 2] = np.maximum(0, overlay_array[strong_below, 2] - 50)
+            
+            if np.any(strong_above):
+                overlay_array[strong_above, 0] = np.maximum(0, overlay_array[strong_above, 0] - 50)
+                overlay_array[strong_above, 1] = np.maximum(0, overlay_array[strong_above, 1] - 50)
+                overlay_array[strong_above, 2] = np.minimum(255, overlay_array[strong_above, 2] + 50)
+            
+            # Convert back to image
+            overlay_array = np.clip(overlay_array, 0, 255).astype(np.uint8)
+            result_image = Image.fromarray(overlay_array)
+            
+            # Add small legend/info overlay
+            draw = ImageDraw.Draw(result_image)
+            
+            # Add legend text with background rectangles for visibility
+            legend_x = result_image.width - 210
+            legend_y = 10
+            
+            # Draw background rectangles for text visibility
+            draw.rectangle([legend_x, legend_y, result_image.width - 10, legend_y + 50], fill=(0, 0, 0, 180), outline=(255, 255, 255))
+            
+            # Add legend text
+            draw.text((legend_x + 5, legend_y + 5), "Threshold Preview:", fill=(255, 255, 255))
+            draw.text((legend_x + 5, legend_y + 20), f"Red: Below {bottom_threshold:.2f}", fill=(255, 100, 100))
+            draw.text((legend_x + 5, legend_y + 35), f"Blue: Above {upper_threshold:.2f}", fill=(100, 100, 255))
+            
+            return result_image
+            
+        except Exception as e:
+            print(f"Error creating threshold overlay: {e}")
+            # Return original image if overlay creation fails
+            return image if image else Image.new("RGB", (400, 300), color=(200, 200, 200))
+
     def create_interface(self) -> gr.Blocks:
         """
         Create and return the Gradio interface.
@@ -479,13 +848,20 @@ class GradioInterface:
         Returns:
             Configured Gradio Blocks interface
         """
+        # Load custom presets on interface creation
+        self.load_custom_presets()
+        
         # Get available functions
         interval_functions = list_interval_functions()
         sorting_functions = list_sorting_functions()
+        
+        # Get available presets
+        preset_names = ["Select a preset..."] + list_presets()
+        preset_descriptions = get_preset_descriptions()
 
         with gr.Blocks(
             title="Pixel Sorter",
-            theme=gr.themes.Glass(),
+            theme=gr.themes.Origin(),
             css=".gradio-container {max-width: 1200px; margin: auto;}",
         ) as interface:
 
@@ -521,19 +897,34 @@ class GradioInterface:
                             interactive=False,
                         )
 
+                # Processing button - moved to top for easy access
+                process_button = gr.Button("Sort Pixels", variant="primary", size="lg")
+
                 with gr.Row():
                     interval_dropdown = gr.Dropdown(
                         choices=interval_functions,
                         value="random",
                         label="Interval Function",
                         info="How to group pixels for sorting",
+                        scale=1
                     )
                     sorting_dropdown = gr.Dropdown(
                         choices=sorting_functions,
                         value="lightness",
                         label="Sorting Function",
                         info="How to sort pixels within each group",
+                        scale=1
                     )
+                
+                # Add sorting function visualization
+                sorting_visualization = gr.Image(
+                    label="Sorting Preview",
+                    type="pil",
+                    height=120,
+                    interactive=False,
+                    show_label=True,
+                    container=True
+                )
 
                 with gr.Row():
                     randomness_slider = gr.Slider(
@@ -609,6 +1000,27 @@ class GradioInterface:
                     interactive=False,
                     show_label=False,
                     container=False
+                )
+                
+                # Add live threshold overlay on uploaded image
+                gr.Markdown("### Live Threshold Overlay")
+                gr.Markdown("See which pixels will be affected by your threshold settings (like focus peaking on cameras):")
+                
+                with gr.Row():
+                    overlay_toggle = gr.Checkbox(
+                        label="Enable Threshold Overlay",
+                        value=True,
+                        info="Show red/blue overlay on pixels that will be sorted",
+                        scale=1
+                    )
+                
+                threshold_overlay_image = gr.Image(
+                    label="Threshold Overlay Preview",
+                    type="pil",
+                    height=300,
+                    interactive=False,
+                    show_label=True,
+                    container=True
                 )
 
                 gr.Markdown("### Interval Parameters")
@@ -692,8 +1104,51 @@ class GradioInterface:
                     """
                     )
 
-            # Processing button
-            process_button = gr.Button("Sort Pixels", variant="primary", size="lg")
+            with gr.Tab("Presets"):
+                gr.Markdown("### Load Presets")
+                gr.Markdown("Choose from built-in presets or your saved custom presets:")
+                
+                with gr.Row():
+                    preset_dropdown = gr.Dropdown(
+                        choices=preset_names,
+                        value="Select a preset...",
+                        label="Choose Preset",
+                        info="Select a preset to load its settings",
+                        scale=2
+                    )
+                    load_preset_button = gr.Button("Load Preset", variant="secondary", scale=1)
+                
+                # Status for preset loading
+                preset_status = gr.Textbox(
+                    label="Preset Status",
+                    value="",
+                    interactive=False,
+                    container=False
+                )
+                
+                # Display preset descriptions
+                with gr.Accordion("Preset Descriptions", open=False):
+                    descriptions_text = "\n".join([f"**{name}**: {desc}" for name, desc in preset_descriptions.items()])
+                    gr.Markdown(descriptions_text)
+                
+                gr.Markdown("---")
+                gr.Markdown("### Save Current Settings as Preset")
+                gr.Markdown("Save your current advanced settings configuration as a new preset:")
+                
+                with gr.Row():
+                    new_preset_name = gr.Textbox(
+                        label="Preset Name",
+                        placeholder="Enter a name for your custom preset...",
+                        scale=2
+                    )
+                    save_preset_button = gr.Button("💾 Save Preset", variant="primary", scale=1)
+                
+                save_preset_status = gr.Textbox(
+                    label="Save Status",
+                    value="",
+                    interactive=False,
+                    container=False
+                )
 
             # Set up the CA preview function
             ca_preview_button.click(
@@ -718,6 +1173,21 @@ class GradioInterface:
                 outputs=[angle_visualization],
             )
             
+            # Set up the sorting function visualization (updates in real-time as dropdown changes)
+            sorting_dropdown.change(
+                fn=self.create_sorting_function_visualization,
+                inputs=[sorting_dropdown],
+                outputs=[sorting_visualization],
+                show_progress=False,
+            )
+            
+            # Initialize sorting function visualization with default value
+            interface.load(
+                fn=self.create_sorting_function_visualization,
+                inputs=[sorting_dropdown],
+                outputs=[sorting_visualization],
+            )
+            
             # Set up the threshold visualization (updates in real-time as sliders move)
             bottom_threshold_slider.change(
                 fn=self.create_threshold_visualization,
@@ -740,6 +1210,43 @@ class GradioInterface:
                 outputs=[threshold_visualization],
             )
             
+            # Set up the threshold overlay (updates when sliders change or image changes)
+            bottom_threshold_slider.change(
+                fn=self.create_threshold_overlay,
+                inputs=[input_image, bottom_threshold_slider, upper_threshold_slider, overlay_toggle],
+                outputs=[threshold_overlay_image],
+                show_progress=False,
+            )
+            
+            upper_threshold_slider.change(
+                fn=self.create_threshold_overlay,
+                inputs=[input_image, bottom_threshold_slider, upper_threshold_slider, overlay_toggle],
+                outputs=[threshold_overlay_image],
+                show_progress=False,
+            )
+            
+            overlay_toggle.change(
+                fn=self.create_threshold_overlay,
+                inputs=[input_image, bottom_threshold_slider, upper_threshold_slider, overlay_toggle],
+                outputs=[threshold_overlay_image],
+                show_progress=False,
+            )
+            
+            # Update overlay when input image changes
+            input_image.change(
+                fn=self.create_threshold_overlay,
+                inputs=[input_image, bottom_threshold_slider, upper_threshold_slider, overlay_toggle],
+                outputs=[threshold_overlay_image],
+                show_progress=False,
+            )
+            
+            # Initialize threshold overlay with default values
+            interface.load(
+                fn=self.create_threshold_overlay,
+                inputs=[input_image, bottom_threshold_slider, upper_threshold_slider, overlay_toggle],
+                outputs=[threshold_overlay_image],
+            )
+            
             # Set up dimension display updates when image or scale changes
             input_image.change(
                 fn=self.calculate_scaled_dimensions,
@@ -752,6 +1259,42 @@ class GradioInterface:
                 fn=self.calculate_scaled_dimensions,
                 inputs=[input_image, scale_slider],
                 outputs=[scale_info],
+                show_progress=False,
+            )
+            
+            # Set up preset loading functionality
+            load_preset_button.click(
+                fn=self.load_preset_values,
+                inputs=[preset_dropdown],
+                outputs=[
+                    interval_dropdown,
+                    sorting_dropdown,
+                    randomness_slider,
+                    angle_slider,
+                    bottom_threshold_slider,
+                    upper_threshold_slider,
+                    characteristic_length_slider,
+                    ca_rule_slider,
+                    preset_status
+                ],
+                show_progress=False,
+            )
+            
+            # Set up preset saving functionality
+            save_preset_button.click(
+                fn=self.save_current_as_preset,
+                inputs=[
+                    new_preset_name,
+                    interval_dropdown,
+                    sorting_dropdown,
+                    randomness_slider,
+                    angle_slider,
+                    bottom_threshold_slider,
+                    upper_threshold_slider,
+                    characteristic_length_slider,
+                    ca_rule_slider
+                ],
+                outputs=[preset_dropdown, save_preset_status],
                 show_progress=False,
             )
 
