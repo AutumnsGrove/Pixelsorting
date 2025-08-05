@@ -26,7 +26,7 @@ def main():
         launch_interface(
             share=False,  # Set to True to create a public link
             server_name="127.0.0.1",
-            server_port=7860
+            server_port=int(os.environ.get('GRADIO_SERVER_PORT', 7864))
         )
     except KeyboardInterrupt:
         print("\n👋 Shutting down Pixel Sorter. Goodbye!")
