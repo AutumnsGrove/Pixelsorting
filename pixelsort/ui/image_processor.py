@@ -211,6 +211,10 @@ class ImageProcessor:
                 result_image = self.current_processor.reconstruct_image()
                 progress_manager.complete_step("reconstruction", "Processing complete!")
 
+                # Clean up temporary file immediately after processing
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
                 # Get processing info for status message
                 info = self.current_processor.get_processing_info()
                 status_msg = (
@@ -222,14 +226,22 @@ class ImageProcessor:
 
                 return result_image, status_msg
 
-            finally:
-                # Clean up temporary file
+            except Exception as processing_error:
+                # Clean up temporary file on error
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
+                raise processing_error
 
         except Exception as e:
             error_msg = f"❌ Error processing image: {str(e)}"
             print(f"Processing error: {e}")  # For debugging
+            
+            # Clean up any remaining temporary files
+            if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass  # Ignore cleanup errors
 
             # Update progress to show error
             if "progress" in locals():

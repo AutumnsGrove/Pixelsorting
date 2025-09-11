@@ -136,11 +136,40 @@ def edge_intervals(pixels: PixelArray, args: dict) -> IntervalArray:
     Returns:
         2D array of interval boundaries
     """
-    # Load and process edge data
-    img = open_image(args["url"], False)
-    img = img.rotate(args["angle"], expand=True)
-    edge_img = apply_edge_filter(img).convert("RGBA")
-    edge_data = edge_img.load()
+    # Load and process edge data with robust error handling
+    try:
+        img = open_image(args["url"], False)
+        img = img.rotate(args["angle"], expand=True)
+        edge_img = apply_edge_filter(img).convert("RGBA")
+        edge_data = edge_img.load()
+    except Exception as e:
+        # If image loading fails, create edge data from the existing pixel array
+        print(f"Warning: Could not load image for edge detection ({e}). Using pixel data instead.")
+        # Create a PIL Image from the pixel array
+        height = len(pixels)
+        width = len(pixels[0]) if height > 0 else 0
+        
+        if height == 0 or width == 0:
+            # Return no intervals if no pixels
+            return [[] for _ in range(len(pixels))]
+        
+        # Reconstruct image from pixel array
+        img = Image.new("RGBA", (width, height))
+        for y in range(height):
+            for x in range(width):
+                if x < len(pixels[y]):
+                    img.putpixel((x, y), pixels[y][x])
+        
+        # Apply rotation and edge detection
+        img = img.rotate(args["angle"], expand=True)
+        edge_img = apply_edge_filter(img).convert("RGBA")
+        edge_data = edge_img.load()
+        
+        # Update pixels array to match rotated dimensions
+        new_width, new_height = edge_img.size
+        if new_width != width or new_height != height:
+            # Update the pixel dimensions to match the rotated image
+            pixels = image_to_pixel_array(new_width, new_height, img.load(), "Updating rotated image...")
     
     filter_pixels = image_to_pixel_array(
         len(pixels[0]), len(pixels), edge_data, "Finding threshold..."
@@ -370,14 +399,40 @@ def shuffle_total_intervals(pixels: PixelArray, args: dict) -> PixelArray:
     Returns:
         3D array of pixels with shuffle effect applied
     """
-    # Load original image and apply shuffle effect
-    input_img = open_image(args["url"], False).convert("RGBA")
-    shuffled_img = shuffle_image_rows(input_img)
+    try:
+        # Load original image and apply shuffle effect
+        input_img = open_image(args["url"], False).convert("RGBA")
+        shuffled_img = shuffle_image_rows(input_img)
+        
+        # Convert to pixel array
+        data = shuffled_img.load()
+        size0, size1 = shuffled_img.size
+        return image_to_pixel_array(size0, size1, data, "Recreating image...")
     
-    # Convert to pixel array
-    data = shuffled_img.load()
-    size0, size1 = shuffled_img.size
-    return image_to_pixel_array(size0, size1, data, "Recreating image...")
+    except Exception as e:
+        # If image loading fails, create image from pixel array and apply shuffle
+        print(f"Warning: Could not load image for shuffle effect ({e}). Using pixel data instead.")
+        
+        height = len(pixels)
+        width = len(pixels[0]) if height > 0 else 0
+        
+        if height == 0 or width == 0:
+            return pixels  # Return original if no pixels
+        
+        # Reconstruct image from pixel array
+        img = Image.new("RGBA", (width, height))
+        for y in range(height):
+            for x in range(width):
+                if x < len(pixels[y]):
+                    img.putpixel((x, y), pixels[y][x])
+        
+        # Apply shuffle effect
+        shuffled_img = shuffle_image_rows(img)
+        
+        # Convert back to pixel array
+        data = shuffled_img.load()
+        size0, size1 = shuffled_img.size
+        return image_to_pixel_array(size0, size1, data, "Recreating image...")
 
 
 def shuffle_axis_intervals(pixels: PixelArray, args: dict) -> PixelArray:
@@ -391,14 +446,40 @@ def shuffle_axis_intervals(pixels: PixelArray, args: dict) -> PixelArray:
     Returns:
         3D array of pixels with shuffle effect applied
     """
-    # Load original image and apply shuffle effect
-    input_img = open_image(args["url"], False).convert("RGBA")
-    shuffled_img = shuffle_image_vertically(input_img)
+    try:
+        # Load original image and apply shuffle effect
+        input_img = open_image(args["url"], False).convert("RGBA")
+        shuffled_img = shuffle_image_vertically(input_img)
+        
+        # Convert to pixel array
+        data = shuffled_img.load()
+        size0, size1 = shuffled_img.size
+        return image_to_pixel_array(size0, size1, data, "Recreating image...")
     
-    # Convert to pixel array
-    data = shuffled_img.load()
-    size0, size1 = shuffled_img.size
-    return image_to_pixel_array(size0, size1, data, "Recreating image...")
+    except Exception as e:
+        # If image loading fails, create image from pixel array and apply shuffle
+        print(f"Warning: Could not load image for shuffle effect ({e}). Using pixel data instead.")
+        
+        height = len(pixels)
+        width = len(pixels[0]) if height > 0 else 0
+        
+        if height == 0 or width == 0:
+            return pixels  # Return original if no pixels
+        
+        # Reconstruct image from pixel array
+        img = Image.new("RGBA", (width, height))
+        for y in range(height):
+            for x in range(width):
+                if x < len(pixels[y]):
+                    img.putpixel((x, y), pixels[y][x])
+        
+        # Apply shuffle effect
+        shuffled_img = shuffle_image_vertically(img)
+        
+        # Convert back to pixel array
+        data = shuffled_img.load()
+        size0, size1 = shuffled_img.size
+        return image_to_pixel_array(size0, size1, data, "Recreating image...")
 
 
 # Registry of available interval functions
