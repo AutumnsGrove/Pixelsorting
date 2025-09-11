@@ -137,7 +137,7 @@ def edge_intervals(pixels: PixelArray, args: dict) -> IntervalArray:
         2D array of interval boundaries
     """
     # Load and process edge data
-    img = open_image(args["url"], args["internet"])
+    img = open_image(args["url"], False)
     img = img.rotate(args["angle"], expand=True)
     edge_img = apply_edge_filter(img).convert("RGBA")
     edge_data = edge_img.load()
@@ -371,7 +371,7 @@ def shuffle_total_intervals(pixels: PixelArray, args: dict) -> PixelArray:
         3D array of pixels with shuffle effect applied
     """
     # Load original image and apply shuffle effect
-    input_img = open_image(args["url"], args["internet"]).convert("RGBA")
+    input_img = open_image(args["url"], False).convert("RGBA")
     shuffled_img = shuffle_image_rows(input_img)
     
     # Convert to pixel array
@@ -392,7 +392,7 @@ def shuffle_axis_intervals(pixels: PixelArray, args: dict) -> PixelArray:
         3D array of pixels with shuffle effect applied
     """
     # Load original image and apply shuffle effect
-    input_img = open_image(args["url"], args["internet"]).convert("RGBA")
+    input_img = open_image(args["url"], False).convert("RGBA")
     shuffled_img = shuffle_image_vertically(input_img)
     
     # Convert to pixel array
